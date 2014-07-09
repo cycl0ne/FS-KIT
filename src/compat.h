@@ -53,8 +53,8 @@
 #define OFF_T_SIZE 4
 
 #if OFF_T_SIZE == 4
-typedef long fs_off_t;
-typedef long my_ino_t;
+typedef int fs_off_t;		//Has been long fs_off_t, but "long" on 64bit Linux = 64bit and not 32bit! int will stay at 32bit.
+typedef int my_ino_t;
 #elif OFF_T_SIZE == 8
 typedef long long fs_off_t;
 typedef long long my_ino_t;

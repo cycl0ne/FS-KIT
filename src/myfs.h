@@ -32,9 +32,16 @@
 
 typedef my_ino_t inode_addr;
 
+#define LINUX64 1
+
+#if LINUX64
+#define LIN64_OFFSET 29
+#else
+#define LIN64_OFFSET 0
+#endif
 
 #if OFF_T_SIZE == 4
-#define NUM_DIRECT_BLOCKS   20
+#define NUM_DIRECT_BLOCKS   20 + LIN64_OFFSET
 #elif OFF_T_SIZE == 8
 #define NUM_DIRECT_BLOCKS   8
 #endif
@@ -52,7 +59,7 @@ typedef struct data_stream
     fs_off_t indirect;
     fs_off_t double_indirect;
     fs_off_t size;
-} data_stream;
+} __attribute__((packed)) data_stream;
 
 
 
@@ -60,7 +67,7 @@ typedef struct myfs_inode_etc {  /* these fields are needed when in memory */
     lock   lock;                 /* guard access to this inode */
     char  *contents;             /* contents of a directory */
     int    counter;
-} myfs_inode_etc;
+} __attribute__((packed)) myfs_inode_etc;
 
 
 #define MAX_INODE_ACCESS  1024
@@ -79,13 +86,14 @@ typedef struct myfs_inode
     int32           mode;
     inode_addr      inode_num;
     int32           flags;
-    time_t          create_time;
+    
+    time_t          create_time;	
     time_t          last_modified_time;
 
     myfs_inode_etc *etc;                    /* only used in memory */
 
     data_stream     data;
-} myfs_inode;
+} __attribute__((packed)) myfs_inode;
 
 
 #define INODE_MAGIC1      0x496e6f64  /* 'Inod' */
