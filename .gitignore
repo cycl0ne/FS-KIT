@@ -22,5 +22,5 @@
 *.x86_64
 *.hex
 fsh
-testfs
+tstfs
 makefs
