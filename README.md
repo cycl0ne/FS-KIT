@@ -1,8 +1,10 @@
 FS-KIT
 ======
 
-This is the "original" Code of the author:
+In "original" you will find the original source, here in "master" you will find a modified version from me.
 
+
+------------------------------------------------------------
 FS-Kit from the Book: "Practical File System Design with the Be File System"
 The book can be downloaded at: http://www.nobius.org/~dbg/practical-file-system-design.pdf
 
