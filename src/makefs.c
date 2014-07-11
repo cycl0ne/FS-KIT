@@ -1,82 +1,55 @@
-/*
-  This file contains the code that will call the initialization routine
-  for a file system (which in turn will initialize the file system). It
-  also has to do a few other housekeeping chores to make sure that the
-  file system is unmounted properly and all that.
-  
-  
-  THIS CODE COPYRIGHT DOMINIC GIAMPAOLO.  NO WARRANTY IS EXPRESSED 
-  OR IMPLIED.  YOU MAY USE THIS CODE AND FREELY DISTRIBUTE IT FOR
-  NON-COMMERCIAL USE AS LONG AS THIS NOTICE REMAINS ATTACHED.
-
-  FOR COMMERCIAL USE, CONTACT DOMINIC GIAMPAOLO (dbg@be.com).
-
-  Dominic Giampaolo
-  dbg@be.com
-*/
 #include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <string.h>
-#include <sys/types.h>
-#include <time.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <limits.h>
+#include "filesystem.h"
 
-#include "myfs.h"
-#include "kprotos.h"
+typedef int chunk;
+#define BITS_IN_CHUNK   (sizeof(chunk)*CHAR_BIT)
 
-
-static int
-get_value(char *str)
+typedef struct rootblock
 {
-    char buff[128];
-    
-    printf("%s: ", str); fflush(stdout);
-    fgets(buff, sizeof(buff), stdin);
+    int32_t disktype;
+    uint32_t options;          /* bit 0 is harddisk mode           */
+    uint32_t datestamp;        /* current datestamp */
+    uint16_t creationday;      /* days since Jan. 1, 1978 (like ADOS; INT16 instead of LONG) */
+    uint16_t creationminute;   /* minutes past modnight            */
+    uint16_t creationtick;     /* ticks past minute                */
+    uint16_t protection;       /* protection bits (ala ADOS)       */
+    uint8_t diskname[32];     /* disk label (pascal string)       */
+    uint32_t lastreserved;     /* reserved area. blocknumbers      */
+    uint32_t firstreserved;
+    uint32_t reserved_free;    /* number of reserved blocks (blksize blocks) free  */
+    uint16_t blksize;          /* size of reserved blocks in bytes */
+    uint16_t rblkcluster;      /* number of blocks in rootblock, including bitmap  */
+    uint32_t blocksfree;       /* blocks free                      */
+    uint32_t alwaysfree;       /* minimum number of blocks free    */
+    uint32_t roving_ptr;       /* current int32_t bitmapfield nr for allocation       */
+    uint32_t deldir;           /* deldir location (<= 17.8)        */
+    uint32_t disksize;         /* disksize in sectors              */
+    uint32_t extension;        /* rootblock extension (16.4)       */
+    uint32_t not_used;
+    union
+    {
+        uint16_t anodeblocks[208];         /* SMALL: 200*84 = 16800 anodes */
+        struct
+        {
+            uint32_t bitmapindex[5];       /* 5 bitmap indexblocks with 253 bitmap blocks each */
+            uint32_t indexblocks[99];      /* 99 index blocks with 253 anode blocks each       */
+        } small;
+        struct 
+        {
+            uint32_t bitmapindex[104];		/* 104 bitmap indexblocks = max 104 G */
+        } large;
+    } idx;
+} rootblock_t;
 
-    return strtol(buff, NULL, 0);
-}
 
-
-int
-main(int argc, char **argv)
+void main(void)
 {
-    int        block_size = 1024, i;
-    char      *disk_name = "big_file";
-    char      *volume_name = "untitled";
-    myfs_info  *myfs;
-
-    for (i=1; i < argc; i++) {
-        if (isdigit(argv[i][0])) {
-            block_size = strtoul(argv[i], NULL, 0);
-        } else if (disk_name == NULL) {
-            disk_name = argv[i];
-        } else {
-            volume_name = argv[i];
-        }
-    }
-    
-    if (disk_name == NULL) {
-        fprintf(stderr, "makefs error: you must specify a file name that\n");
-        fprintf(stderr, "              will contain the file systemn");
-        exit(5);
-    }
-
-    init_block_cache(256, 0);
-
-    myfs = myfs_create_fs(disk_name, volume_name, block_size, NULL);
-    if (myfs != NULL)
-        printf("MYFS w/%d byte blocks successfully created on %s as %s\n",
-               block_size, disk_name, volume_name);
-    else {
-        printf("!HOLA! FAILED to create a MYFS file system on %s\n", disk_name);
-        exit(5);
-    }
-
-    myfs_unmount(myfs);
-
-    shutdown_block_cache();
-
-    return 0;   
+	int bsize = 512;
+	int n = 1000;
+	printf("Size of SuperBlock: %d\n", (int)sizeof(pfs_superblock));
+	printf("Size of rootblock_t: %d\n", (int)sizeof(rootblock_t));	
+	printf("---%d---\n", (int) (((n / bsize)+1) * 16) + n);
+	printf("bits in chunk: %d\n", (int)BITS_IN_CHUNK);
+	return;
 }
