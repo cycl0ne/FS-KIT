@@ -2,13 +2,32 @@
 
 //read_blocks(myfs_info *myfs, fs_off_t block_num, void *block, size_t nblocks)
 
-int32_t pfs_New_Bitmap_Block(pGd gd, uint64_t blck)
+int32_t pfs_New_Bitmap_Block(pGD gd, uint64_t blck)
 {
-	pfs_bitmap	*bmblck = malloc(gd->sb.block_size);
-	
+	uint32_t	i;
+
+	pfs_bitmap	*bmblck = AllocVec(gd->sb.block_size, 0);//MEMF_FAST|MEMF_CLEAR);
+	if (bmblck)
+	{
+		printf("Create BM @Block: %d\n", (int)blck);
+		bmblck->id		 	 = BITMAP_ID;
+		bmblck->ownblock 	 = blck;
+		uint32_t longsperbmp = (gd->sb.block_size-16)>>2;
+		uint32_t *bitmap	 = bmblck->bitmap;
+
+		for (i = 0; i < longsperbmp; i++) 
+		{
+			//printf("%d/",i);
+			*bitmap++ = 0;
+		}
+		RawWrite(gd, blck, bmblck, gd->sb.block_size>>9);
+		FreeVec(bmblck);
+		return 0;
+	}
+	return -1;
 }
 
-int32_t pfs_Get_Bitmap_Block(pGd gd, uint64_t blck, uint8_t *buffer, uint8_t **start)
+int32_t pfs_Get_Bitmap_Block(pGD gd, uint64_t blck, uint8_t *buffer, uint8_t **start)
 {
 	// Buffer has to be at least block_size
 	/*
@@ -20,10 +39,12 @@ int32_t pfs_Get_Bitmap_Block(pGd gd, uint64_t blck, uint8_t *buffer, uint8_t **s
 	** 
 	** to calculate the exact position of a bit in the bitmap we have to take the Header16 into account
 	*/
+/*
 	uint32_t bsize = gd->sb.block_size;
 	
 	read_blocks(gd, blck, buffer, 1);
 	start = buffer+16;
+*/
 	return 0;
 }
 
@@ -33,7 +54,7 @@ int32_t pfs_CreateStorageBitmap(pGD gd)
     int        ret, i, n, bsize;
     ssize_t    num_bytes, num_blocks;
     ssize_t    amt;
-    BitVector *bv;
+//    BitVector *bv;
 
     bsize = gd->sb.block_size;
 
@@ -46,58 +67,16 @@ int32_t pfs_CreateStorageBitmap(pGD gd)
 	// now divide the bytes throught the blocksize to get the number of blocks needed!
     n /= bsize;
 
-    gd->num_bitmap_blocks = n;
-	num_blocks = gd->num_bitmap_blocks + 1;
+	printf("number of bitmap_blocks: %d (num: %x)\n", n, (int)gd->sb.num_blocks);
+	gd->sb.bitmap_start = 2;
 
-    amt = write_blocks(gd, 1, buff, n);
-
-    gd->sb.used_blocks += num_blocks;
+	for (i = gd->sb.bitmap_start; i< n+gd->sb.bitmap_start; i++) pfs_New_Bitmap_Block(gd, i);
+	gd->sb.num_bitmap_blocks = n;
+//	printf("used_blocks: %d\n", gd->sb.used_blocks);
+    gd->sb.used_blocks += n;
+	gd->bitsperbitmap = (bsize-16)*8;
+//	printf("used_blocks: %d\n", gd->sb.used_blocks);
+	pfs_WriteSuperBlock(gd);
 	return 0;
-#if 0
-// below here is old code ---------------------------------------------
-
-
-    gd->bv = (BitVector *)calloc(1, sizeof(BitVector));
-    if (gd->bv == NULL) {
-        ret = ENOMEM;
-        goto err;
-    }
-    num_bytes = n * bsize;
-
-    buff = (char *)calloc(1, num_bytes);
-    if (buff == NULL) {
-        ret = ENOMEM;
-        goto err;
-    }
-
-    gd->bv->bits    = (chunk *)buff;
-    gd->bv->numbits = gd->sb.num_blocks; 
-
-
-    /* fill in used blocks, including the superblock */
-    num_blocks = gd->num_bitmap_blocks + 1;
-    if (GetFreeRangeOfBits(gd->bv, num_blocks, NULL) != 0) 
-    {
-        printf("*** failed to allocate %ld bits in create_bitmap\n", gd->bbm.num_bitmap_blocks + 1);
-        ret = ENOSPC;
-        goto err;
-    }
-
-    /* write out the bitmap blocks, starting at block # 1 */
-    amt = write_blocks(gd, 1, buff, n);
-    if (amt != n)  {
-        ret = EINVAL;       
-        goto err;
-    }
-        
-    gd->sb.used_blocks += num_blocks;
-
-    return 0;
-
- err:
-    if (buff) free(buff);
-    gd->bv = NULL;
-    return ret;
-#endif
 }
 

@@ -48,8 +48,27 @@ void main(void)
 	int bsize = 512;
 	int n = 1000;
 	printf("Size of SuperBlock: %d\n", (int)sizeof(pfs_superblock));
-	printf("Size of rootblock_t: %d\n", (int)sizeof(rootblock_t));	
+	printf("Size of : %d\n", (int)sizeof(pfs_inodeheader));	
+	printf("Size of : %d\n", (int)sizeof(pfs_inode));	
 	printf("---%d---\n", (int) (((n / bsize)+1) * 16) + n);
 	printf("bits in chunk: %d\n", (int)BITS_IN_CHUNK);
+	if (sizeof(pfs_superblock) != 512)
+	{
+		printf("Superblock not 512bytes\n");
+		return;
+	}
+	
+	pGD gd = AllocVec(sizeof(GD), 0);
+	
+	if (gd) 
+	{
+		memset(gd, 0, sizeof(GD));
+		OpenDevice(gd);
+		pfs_InitSuperBlock(gd);
+		pfs_CreateStorageBitmap(gd);
+		pfs_CreateInodes(gd);
+		CloseDevice(gd);
+		FreeVec(gd);
+	}
 	return;
 }

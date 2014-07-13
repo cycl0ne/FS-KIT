@@ -1,82 +1,99 @@
 #include <stdio.h>
 #include "filesystem.h"
 
-int32_t pfs_create_inodes(pGD gd)
+static int32_t pfs_NewInodeBitmap(pGD gd, uint64_t blck)
 {
-	int32_t		blocksize = gd->sb.block_size;
+	uint32_t	i;
+
+	pfs_bitmap	*bmblck = AllocVec(gd->sb.block_size, 0);//MEMF_FAST|MEMF_CLEAR);
+	if (bmblck)
+	{
+		printf("Create INode BMP @Block: %d\n", (int)blck);
+		bmblck->id		 	 = INODEBITMAP_ID;
+		bmblck->ownblock 	 = blck;
+		uint32_t longsperbmp = (gd->sb.block_size-16)>>2;
+		uint32_t *bitmap	 = bmblck->bitmap;
+
+		for (i = 0; i < longsperbmp; i++) 
+		{
+			//printf("%d/",i);
+			*bitmap++ = 0;
+		}
+		RawWrite(gd, blck, bmblck, gd->sb.block_size>>9);
+		FreeVec(bmblck);
+		return 0;
+	}
+	return -1;
+}
+
+static int32_t	pfs_NewInodeBlock(pGD gd, uint64_t block)
+{
+	uint32_t	i;
+	uint32_t	j;
+	pfs_inodeheader *head;
+	pfs_inode		*inode;
+	
+	uint8_t	*blck = AllocVec(gd->sb.block_size, 0);//MEMF_FAST|MEMF_CLEAR);
+	if (blck)
+	{
+		head = (pfs_inodeheader *) blck;
+		head->id		= INODEHD_ID;
+		head->checksum	= 0;
+		head->ownblock	= block;
+		
+		inode = (pfs_inode *) (blck + sizeof(pfs_inodeheader));
+		j = (gd->sb.block_size - sizeof(pfs_inodeheader))/sizeof(pfs_inode);
+		for (i = 0; i< j; i++)
+		{
+//			printf("Creating Inode #%d\n", (int)i);
+			inode[i].pad1 = INODE_ID;
+		}
+		RawWrite(gd, block, blck, gd->sb.block_size>>9);
+		FreeVec(blck);
+	}
+	return 0;
+}
+
+int32_t pfs_CreateInodes(pGD gd)
+{
 	uint64_t	map_start;
 	uint64_t	inodes_start;
 	uint64_t	num_inodes;
 	uint64_t	num_map_blocks;
 	uint64_t	num_inode_blocks;
 	uint64_t	i;
-	void*		block;
-	
+
+	int32_t		blocksize = gd->sb.block_size;
+
+	// 1 Inode for 4 Blocks
 	num_inodes		 = gd->sb.num_blocks >> 2;
-	num_inode_blocks = num_inodes / (8*(blocksize/512)-1);  // 7 Inode + 1 Hdr = 512bytes;
-	num_map_blocks	 = (num_inode_blocks / 8 / blocksize) + 1;
 	
-    if (pre_allocate_blocks(gd, &num_map_blocks, &map_start) != 0) 
-    {
-        printf("failed to allocate inode map blocks\n");
-        return ENOSPC;
-    }
+	num_inode_blocks = (blocksize-sizeof(pfs_inodeheader))/sizeof(pfs_inode);
+	num_inode_blocks = num_inodes / num_inode_blocks + 1; 
+	num_map_blocks	 = (num_inode_blocks / 8 / (blocksize-16)) + 1;
 
-    if (map_start != gd->bbm.num_bitmap_blocks + 1)
-        printf("that's weird... map_start == %d, not %d\n", map_start, myfs->bbm.num_bitmap_blocks);
+    printf("num inodes %ld num_map_blocks %ld num_inode blocks %ld\n", num_inodes, num_map_blocks, num_inode_blocks);
 
+	// todo: PReallocate Inodes in bitmap
+	// todo: PReallocate InodesMap in bitmap
 
-    if (pre_allocate_blocks(gd, &num_inode_blocks, &inodes_start) != 0) 
-    {
-        printf("failed to allocate inode data blocks\n");
-        return ENOSPC;
-    }
-    
-    if (inodes_start != map_start+num_map_blocks)
-        printf("that's weird inode_start == %d not %d\n", inodes_start, map_start + num_map_blocks);
-    
-//
-//------------------------------
-//    
-    block = get_tmp_blocks(myfs, 1);
-    memset(block, 0, bsize);
-    
-    for(i=0; i < num_map_blocks; i++) 
-    {
-        if (write_blocks(myfs, map_start+i, block, 1) != 1) 
-        {
-            printf("error writing inode map block %ld\n", map_start+i);
-            break;
-        }
-    }
+	map_start	 = gd->sb.bitmap_start + gd->sb.num_bitmap_blocks;
+	inodes_start = map_start + num_map_blocks;
 
-    for(i=0; i < num_inode_blocks; i++) 
-    {
-        if (write_blocks(myfs, inodes_start+i, block, 1) != 1) 
-        {
-            printf("error writing inode data block %ld\n", inodes_start+i);
-            break;
-        }
-    }
+	gd->sb.inode_map_start		= map_start;
+	gd->sb.num_inode_map_blocks = num_map_blocks;
+	gd->sb.inodes_start			= inodes_start;
+	gd->sb.num_inode_blocks		= num_inode_blocks;
+	
+	printf("create @%d inode bitmap\n", (int)map_start);
+	while(num_map_blocks--) pfs_NewInodeBitmap(gd, map_start++);
+	printf("create @%d inode blocks\n", (int)inodes_start);
+	while(num_inode_blocks--) pfs_NewInodeBlock(gd, inodes_start++); 
+	printf("End @%d inode blocks\n", (int)inodes_start);
 
-    free_tmp_blocks(myfs, block, 1);
-
-    myfs->dsb.num_inodes           = num_inodes;
-    myfs->dsb.inodes_start         = inodes_start;
-    myfs->dsb.num_inode_blocks     = num_inode_blocks;
-    myfs->dsb.inode_map_start      = map_start;
-    myfs->dsb.num_inode_map_blocks = num_map_blocks;
-
-    myfs->inode_map.bits    = calloc(1, num_map_blocks * bsize);
-    myfs->inode_map.numbits = num_inodes;
-    if (myfs->inode_map.bits == NULL) {
-        printf("couldn't allocate space for the in memory inode map\n");
-        return ENOMEM;
-    }
-
-    /* allocate inode 0 so no one else gets (to enable better error checks) */
-    GetFreeRangeOfBits(&myfs->inode_map, 1, NULL);
-    write_blocks(myfs, map_start, myfs->inode_map.bits, 1);
-
-    return 0;
+    gd->sb.used_blocks += gd->sb.num_inode_blocks;
+    gd->sb.used_blocks += gd->sb.num_inode_map_blocks;
+	printf("used blocks: %d\n", (int)gd->sb.used_blocks);
+	pfs_WriteSuperBlock(gd);
+	return 0;
 }
