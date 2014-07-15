@@ -1,10 +1,9 @@
 FS-KIT
 ======
 
-In "original" you will find the original source, here in "master" you will find a "bugfixed" version from me.
+This is the Test Branch. Here i test an own implementation of a filesystem.
 
-The first problem with the code is, that it had been designed for a 32bit architecture. Thus, when you compile it under Linux 64-Bit, the inode structure will break the ^2 Limit, since pointer and padding are 8byte (128bytes for inode will explode to 240bytes).
-Executing the FSH / makefs will go into an error then. Will try to fix this.
+The idea behind htis filesystem: Every block has an 16byte header, so on a crash, the whole filesystem should be able to refind all data on disk. (theory! Still in development).
 
 Also the journaling is missing :-( and a lot of warnings on compile.
 
