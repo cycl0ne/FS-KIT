@@ -50,11 +50,7 @@ int32_t pfs_Get_Bitmap_Block(pGD gd, uint64_t blck, uint8_t *buffer, uint8_t **s
 
 int32_t pfs_CreateStorageBitmap(pGD gd)
 {
-    char      *buff = NULL;
-    int        ret, i, n, bsize;
-    ssize_t    num_bytes, num_blocks;
-    ssize_t    amt;
-//    BitVector *bv;
+    int        i, n, bsize;
 
     bsize = gd->sb.block_size;
 
@@ -80,3 +76,95 @@ int32_t pfs_CreateStorageBitmap(pGD gd)
 	return 0;
 }
 
+int32_t pfs_AllocateBlock(pGD gd, uint64_t *num_blocks, uint64_t *start_addr, BOOL do_log_write, int32_t exact)
+{
+	int32_t		i, n, len, bsize = gd->sb.block_size, nblocks;
+	int32_t		biggest_free_chunk = 0, max_free_chunk = 1;
+	uint64_t	start = -1;
+	char      *ptr;
+//	BitVector *bv;
+
+	if (*num_blocks <= 0) return -1;
+	do_log_write = FALSE;
+	if (*num_blocks > (gd->sb.num_blocks - gd->sb.used_blocks)) return -1; //ENOSPC;
+
+    for(nblocks = *num_blocks; nblocks >= 1; nblocks /= 2) 
+    {
+        bv = myfs->bbm.bv;
+        start = GetFreeRangeOfBits(bv, nblocks, &biggest_free_chunk);
+        if (start != -1) break;
+ 
+        if (biggest_free_chunk > max_free_chunk) max_free_chunk  = biggest_free_chunk;
+
+		if (exact == LOOSE_ALLOCATION && biggest_free_chunk > 0 && biggest_free_chunk >= (nblocks>>4)) 
+		{
+			nblocks = biggest_free_chunk;
+			start = GetFreeRangeOfBits(bv, nblocks, NULL);
+			if (start != -1) break;
+		}
+
+		if (start != -1 || exact == EXACT_ALLOCATION) break;
+
+		if (start == -1 && exact == TRY_HARD_ALLOCATION && max_free_chunk > 1) 
+		{
+			if (max_free_chunk < nblocks) nblocks = max_free_chunk;
+
+			start = GetFreeRangeOfBits(bv, nblocks, &biggest_free_chunk);
+			if (start != -1) 
+			{
+				i  = 0;
+				break;
+			}
+		}
+
+        if (exact == LOOSE_ALLOCATION && nblocks > max_free_chunk*2) 
+        {
+            nblocks = max_free_chunk * 2;  /* times 2 because of the loop continuation */
+        }
+
+        max_free_chunk = 1;
+    }
+
+	if (start == -1) return -1; //ENOSPC;
+    
+    *start_addr = (uint64_t)start;
+    *num_blocks = nblocks;
+
+    /*
+       calculate the block number of the bitmap block we just modified.
+       the +bitmap_start accounts for the super block.
+    */
+    n   = (start / 8 / bsize) + gd->sb.bitmap_start;
+    len = (nblocks / 8 / bsize) + gd->sb.bitmap_start;
+    
+    
+    ptr = (char *)bv->bits + (((start / 8) / bsize) * bsize);
+
+#if 0
+    if (do_log_write)  {
+        for(i=0; i < len; i++, ptr += bsize) {
+            if (myfs_write_journal_entry(myfs, myfs->cur_je, n+i, ptr) != 1) {
+                printf("error:1 failed to write bitmap block run %d:1!\n",n+i);
+                release_sem(myfs->bbm_sem);
+                return EINVAL;
+            }
+        }
+    } else if (write_blocks(myfs, n, ptr, len) != len) {
+        printf("error: 2 failed to write back bitmap block @ block %d!\n", n);
+        release_sem(myfs->bbm_sem);
+        return EINVAL;
+    }
+#endif
+	if (RawWrite(gd, n, ptr, len) != len)
+	{
+		printf("error: 2 failed to write back bitmap block @ block %d!\n", n);
+		return -1;
+	}
+
+    gd->sb.used_blocks += *num_blocks;
+    gd->sb.flags = MYFS_DIRTY;
+
+    return 0;
+
+
+}
